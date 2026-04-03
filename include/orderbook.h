@@ -3,7 +3,6 @@
 #include "flat_orderbook.h"
 #include "seqlock.h"
 
-#include <map>
 #include <string>
 #include <vector>
 #include <cstdint>
@@ -15,13 +14,14 @@ struct PriceLevel {
     double size;
 };
 
-// Orderbook maintains a full-depth map (writer-side only, no lock needed)
-// and publishes top-N levels via a seqlock for lock-free reader access.
+// Fully flat orderbook — no std::map, no heap allocations on the hot path.
+// Maintains top-N levels in sorted FlatBookSideBuilders and publishes
+// a trivially-copyable snapshot via seqlock for lock-free reader access.
 class Orderbook {
 public:
     explicit Orderbook(std::string product_id);
 
-    // Called from IO thread only — no synchronization needed on the maps
+    // Called from IO thread only — no synchronization needed
     void apply_snapshot(const std::vector<PriceLevel>& bids,
                         const std::vector<PriceLevel>& asks);
 
@@ -37,8 +37,8 @@ private:
     void publish();
 
     std::string product_id_;
-    std::map<double, double, std::greater<>> bids_; // descending by price
-    std::map<double, double> asks_;                  // ascending by price
+    FlatBookSideBuilder bids_; // descending (best bid first)
+    FlatBookSideBuilder asks_; // ascending (best ask first)
     uint64_t update_count_ = 0;
 
     Seqlock<FlatSnapshot> published_;

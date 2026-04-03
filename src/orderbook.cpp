@@ -14,10 +14,10 @@ void Orderbook::apply_snapshot(const std::vector<PriceLevel>& bids,
     asks_.clear();
 
     for (const auto& [price, size] : bids) {
-        bids_[price] = size;
+        bids_.apply<true>(price, size);
     }
     for (const auto& [price, size] : asks) {
-        asks_[price] = size;
+        asks_.apply<false>(price, size);
     }
 
     update_count_ = 0;
@@ -28,19 +28,10 @@ void Orderbook::apply_update(const std::vector<PriceLevel>& bids,
                               const std::vector<PriceLevel>& asks)
 {
     for (const auto& [price, size] : bids) {
-        if (size == 0.0) {
-            bids_.erase(price);
-        } else {
-            bids_[price] = size;
-        }
+        bids_.apply<true>(price, size);
     }
-
     for (const auto& [price, size] : asks) {
-        if (size == 0.0) {
-            asks_.erase(price);
-        } else {
-            asks_[price] = size;
-        }
+        asks_.apply<false>(price, size);
     }
 
     ++update_count_;
@@ -51,25 +42,8 @@ void Orderbook::publish()
 {
     FlatSnapshot snap{};
     snap.update_count = update_count_;
-
-    // Extract top-N bids (map is already sorted descending)
-    uint32_t count = 0;
-    for (const auto& [price, size] : bids_) {
-        if (count >= MAX_DEPTH) break;
-        snap.bids.levels[count] = {price, size};
-        ++count;
-    }
-    snap.bids.count = count;
-
-    // Extract top-N asks (map is already sorted ascending)
-    count = 0;
-    for (const auto& [price, size] : asks_) {
-        if (count >= MAX_DEPTH) break;
-        snap.asks.levels[count] = {price, size};
-        ++count;
-    }
-    snap.asks.count = count;
-
+    snap.bids = bids_.to_flat();
+    snap.asks = asks_.to_flat();
     published_.store(snap);
 }
 
