@@ -4,7 +4,6 @@
 #include <iomanip>
 #include <algorithm>
 #include <cmath>
-#include <cstdio>
 
 namespace cob {
 
@@ -44,12 +43,12 @@ void TuiRenderer::render_loop()
 {
     while (running_) {
         for (const auto& book : books_) {
-            auto snap = book->snapshot(20);
-            auto content = render_book(snap);
+            auto snap = book->load_snapshot();
+            auto content = render_book(book->product_id(), snap);
 
             // Atomic write: write to tmp, then rename
-            auto path = output_dir_ / (snap.product_id + ".txt");
-            auto tmp_path = output_dir_ / (snap.product_id + ".txt.tmp");
+            auto path = output_dir_ / (book->product_id() + ".txt");
+            auto tmp_path = output_dir_ / (book->product_id() + ".txt.tmp");
 
             {
                 std::ofstream ofs(tmp_path, std::ios::trunc);
@@ -61,7 +60,8 @@ void TuiRenderer::render_loop()
     }
 }
 
-std::string TuiRenderer::render_book(const Orderbook::Snapshot& snap) const
+std::string TuiRenderer::render_book(const std::string& product_id,
+                                      const FlatSnapshot& snap) const
 {
     std::ostringstream ss;
 
@@ -72,15 +72,17 @@ std::string TuiRenderer::render_book(const Orderbook::Snapshot& snap) const
 
     // Header
     ss << "\033[1;36m" << std::string(total_w, '=') << "\033[0m\n";
-    ss << "\033[1;37m  " << snap.product_id << " ORDERBOOK";
+    ss << "\033[1;37m  " << product_id << " ORDERBOOK";
     ss << "  (updates: " << snap.update_count << ")";
     ss << "\033[0m\n";
     ss << "\033[1;36m" << std::string(total_w, '=') << "\033[0m\n\n";
 
     // Find max size for bar scaling
     double max_size = 0.0;
-    for (const auto& lvl : snap.asks) max_size = std::max(max_size, lvl.size);
-    for (const auto& lvl : snap.bids) max_size = std::max(max_size, lvl.size);
+    for (uint32_t i = 0; i < snap.asks.count; ++i)
+        max_size = std::max(max_size, snap.asks.levels[i].size);
+    for (uint32_t i = 0; i < snap.bids.count; ++i)
+        max_size = std::max(max_size, snap.bids.levels[i].size);
     if (max_size == 0.0) max_size = 1.0;
 
     // Column headers
@@ -94,11 +96,9 @@ std::string TuiRenderer::render_book(const Orderbook::Snapshot& snap) const
     ss << std::string(total_w, '-') << "\n";
 
     // Asks (reversed so lowest ask is nearest to spread)
-    auto asks = snap.asks;
-    std::reverse(asks.begin(), asks.end());
-
-    for (const auto& lvl : asks) {
-        ss << "\033[31m"  // red for asks
+    for (int i = static_cast<int>(snap.asks.count) - 1; i >= 0; --i) {
+        const auto& lvl = snap.asks.levels[i];
+        ss << "\033[31m"
            << std::setw(price_w) << std::right << format_price(lvl.price)
            << "\033[0m"
            << "  "
@@ -111,9 +111,11 @@ std::string TuiRenderer::render_book(const Orderbook::Snapshot& snap) const
     }
 
     // Spread
-    if (!snap.bids.empty() && !snap.asks.empty()) {
-        double spread = snap.asks.front().price - snap.bids.front().price;
-        double spread_pct = (spread / snap.asks.front().price) * 100.0;
+    if (snap.bids.count > 0 && snap.asks.count > 0) {
+        double best_bid = snap.bids.levels[0].price;
+        double best_ask = snap.asks.levels[0].price;
+        double spread = best_ask - best_bid;
+        double spread_pct = (spread / best_ask) * 100.0;
         ss << "\033[1;33m"
            << std::string(price_w, ' ')
            << "  SPREAD: " << format_price(spread)
@@ -122,8 +124,9 @@ std::string TuiRenderer::render_book(const Orderbook::Snapshot& snap) const
     }
 
     // Bids
-    for (const auto& lvl : snap.bids) {
-        ss << "\033[32m"  // green for bids
+    for (uint32_t i = 0; i < snap.bids.count; ++i) {
+        const auto& lvl = snap.bids.levels[i];
+        ss << "\033[32m"
            << std::setw(price_w) << std::right << format_price(lvl.price)
            << "\033[0m"
            << "  "

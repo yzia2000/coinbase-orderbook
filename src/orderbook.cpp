@@ -10,7 +10,6 @@ Orderbook::Orderbook(std::string product_id)
 void Orderbook::apply_snapshot(const std::vector<PriceLevel>& bids,
                                 const std::vector<PriceLevel>& asks)
 {
-    std::lock_guard lock(mutex_);
     bids_.clear();
     asks_.clear();
 
@@ -21,15 +20,13 @@ void Orderbook::apply_snapshot(const std::vector<PriceLevel>& bids,
         asks_[price] = size;
     }
 
-    last_update_ = std::chrono::steady_clock::now();
     update_count_ = 0;
+    publish();
 }
 
 void Orderbook::apply_update(const std::vector<PriceLevel>& bids,
                               const std::vector<PriceLevel>& asks)
 {
-    std::lock_guard lock(mutex_);
-
     for (const auto& [price, size] : bids) {
         if (size == 0.0) {
             bids_.erase(price);
@@ -46,31 +43,34 @@ void Orderbook::apply_update(const std::vector<PriceLevel>& bids,
         }
     }
 
-    last_update_ = std::chrono::steady_clock::now();
     ++update_count_;
+    publish();
 }
 
-Orderbook::Snapshot Orderbook::snapshot(std::size_t depth) const
+void Orderbook::publish()
 {
-    std::lock_guard lock(mutex_);
-    Snapshot snap;
-    snap.product_id = product_id_;
-    snap.last_update = last_update_;
+    FlatSnapshot snap{};
     snap.update_count = update_count_;
 
-    std::size_t count = 0;
+    // Extract top-N bids (map is already sorted descending)
+    uint32_t count = 0;
     for (const auto& [price, size] : bids_) {
-        if (count++ >= depth) break;
-        snap.bids.push_back({price, size});
+        if (count >= MAX_DEPTH) break;
+        snap.bids.levels[count] = {price, size};
+        ++count;
     }
+    snap.bids.count = count;
 
+    // Extract top-N asks (map is already sorted ascending)
     count = 0;
     for (const auto& [price, size] : asks_) {
-        if (count++ >= depth) break;
-        snap.asks.push_back({price, size});
+        if (count >= MAX_DEPTH) break;
+        snap.asks.levels[count] = {price, size};
+        ++count;
     }
+    snap.asks.count = count;
 
-    return snap;
+    published_.store(snap);
 }
 
 } // namespace cob

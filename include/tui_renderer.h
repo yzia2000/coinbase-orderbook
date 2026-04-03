@@ -3,7 +3,6 @@
 #include "orderbook.h"
 #include <string>
 #include <filesystem>
-#include <unordered_map>
 #include <memory>
 #include <atomic>
 #include <thread>
@@ -24,7 +23,7 @@ public:
 
 private:
     void render_loop();
-    std::string render_book(const Orderbook::Snapshot& snap) const;
+    std::string render_book(const std::string& product_id, const FlatSnapshot& snap) const;
     std::string format_price(double price) const;
     std::string format_size(double size) const;
     std::string bar(double size, double max_size, int width) const;

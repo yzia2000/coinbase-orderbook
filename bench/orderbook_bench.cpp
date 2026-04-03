@@ -108,7 +108,7 @@ static void BM_MapOrderbook_Read(benchmark::State& state) {
     }
 
     for (auto _ : state) {
-        auto snap = book.snapshot(20);
+        auto snap = book.load_snapshot();
         benchmark::DoNotOptimize(snap);
     }
     state.SetItemsProcessed(state.iterations());
@@ -159,7 +159,7 @@ static void BM_MapOrderbook_WriteAndPublish(benchmark::State& state) {
         book.apply_update(bids, asks);
 
         // Simulate what a reader would do: take a snapshot under lock
-        auto snap = book.snapshot(20);
+        auto snap = book.load_snapshot();
         benchmark::DoNotOptimize(snap);
         ++idx;
     }
@@ -217,7 +217,7 @@ static void BM_MapOrderbook_Concurrent(benchmark::State& state) {
 
     // Reader (benchmark thread): measure snapshot read rate
     for (auto _ : state) {
-        auto snap = book.snapshot(20);
+        auto snap = book.load_snapshot();
         benchmark::DoNotOptimize(snap);
     }
     state.SetItemsProcessed(state.iterations());
