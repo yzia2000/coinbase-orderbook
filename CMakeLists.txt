@@ -32,3 +32,23 @@ target_link_libraries(coinbase-orderbook PRIVATE
 target_compile_options(coinbase-orderbook PRIVATE
     -Wall -Wextra -Wpedantic -O2
 )
+
+# Benchmarks
+find_package(benchmark REQUIRED)
+
+add_executable(orderbook-bench
+    bench/orderbook_bench.cpp
+    src/orderbook.cpp
+)
+
+target_include_directories(orderbook-bench PRIVATE include)
+
+target_link_libraries(orderbook-bench PRIVATE
+    benchmark::benchmark
+    benchmark::benchmark_main
+    Threads::Threads
+)
+
+target_compile_options(orderbook-bench PRIVATE
+    -Wall -Wextra -Wpedantic -O2
+)
