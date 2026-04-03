@@ -3,7 +3,7 @@
 #include "seqlock.h"
 #include <array>
 #include <cstdint>
-#include <algorithm>
+#include <functional>
 
 namespace cob {
 
@@ -32,48 +32,46 @@ struct FlatSnapshot {
 
 static_assert(std::is_trivially_copyable_v<FlatSnapshot>);
 
-// Flat array-based book side with insert/update/remove via linear scan + shift
+// Flat array-based book side with insert/update/remove.
+// Comp(a, b) returns true if a should be placed before b.
+// e.g. std::greater<>{} for bids (descending), std::less<>{} for asks (ascending).
+template <typename Comp = std::less<double>>
 class FlatBookSideBuilder {
 public:
-    // Insert or update a price level. If size == 0, removes the level.
-    // For bids: descending order (highest first)
-    // For asks: ascending order (lowest first)
-    template <bool Descending>
+    // Single-scan apply: find insertion point, handle update/remove/insert in one pass.
     void apply(double price, double size) {
-        // Linear scan to find existing level
-        for (uint32_t i = 0; i < count_; ++i) {
-            if (levels_[i].price == price) {
+        // Single scan: find where this price lives or should live.
+        // Since levels are sorted by Comp, we scan until we find
+        // a level that is not "before" price.
+        uint32_t pos = 0;
+        for (; pos < count_; ++pos) {
+            if (levels_[pos].price == price) {
+                // Found existing level — update or remove
                 if (size == 0.0) {
-                    remove_at(i);
+                    remove_at(pos);
                 } else {
-                    levels_[i].size = size;
+                    levels_[pos].size = size;
                 }
                 return;
             }
-        }
-
-        // Not found — insert if size > 0
-        if (size == 0.0 || count_ >= MAX_DEPTH) {
-            // If full, check if this level is better than worst
-            if (size > 0.0 && count_ >= MAX_DEPTH) {
-                bool is_better;
-                if constexpr (Descending) {
-                    is_better = price > levels_[count_ - 1].price;
-                } else {
-                    is_better = price < levels_[count_ - 1].price;
-                }
-                if (is_better) {
-                    // Evict worst, then insert
-                    --count_;
-                } else {
-                    return; // outside our depth
-                }
-            } else {
-                return;
+            if (!comp_(levels_[pos].price, price)) {
+                // levels_[pos] is not before price, so price belongs at pos
+                break;
             }
         }
 
-        insert_sorted<Descending>(price, size);
+        // Not found — insert at pos if size > 0
+        if (size == 0.0) return;
+
+        if (count_ < MAX_DEPTH) {
+            // Room available — shift right from pos and insert
+            insert_at(pos, price, size);
+        } else if (pos < MAX_DEPTH) {
+            // Full but price belongs within range — evict last, shift right, insert
+            count_ = MAX_DEPTH - 1;
+            insert_at(pos, price, size);
+        }
+        // else: pos == MAX_DEPTH means price is worse than all current levels, discard
     }
 
     void clear() { count_ = 0; }
@@ -87,13 +85,6 @@ public:
         return side;
     }
 
-    void load_from(const FlatBookSide& side) {
-        count_ = side.count;
-        for (uint32_t i = 0; i < count_; ++i) {
-            levels_[i] = side.levels[i];
-        }
-    }
-
     uint32_t count() const { return count_; }
 
 private:
@@ -104,29 +95,15 @@ private:
         --count_;
     }
 
-    template <bool Descending>
-    void insert_sorted(double price, double size) {
-        // Find insertion point
-        uint32_t pos = 0;
-        for (; pos < count_; ++pos) {
-            bool should_insert;
-            if constexpr (Descending) {
-                should_insert = price > levels_[pos].price;
-            } else {
-                should_insert = price < levels_[pos].price;
-            }
-            if (should_insert) break;
-        }
-
-        // Shift right
+    void insert_at(uint32_t pos, double price, double size) {
         for (uint32_t i = count_; i > pos; --i) {
             levels_[i] = levels_[i - 1];
         }
-
         levels_[pos] = {price, size};
         ++count_;
     }
 
+    [[no_unique_address]] Comp comp_{};
     std::array<FlatPriceLevel, MAX_DEPTH> levels_{};
     uint32_t count_ = 0;
 };

@@ -37,8 +37,8 @@ private:
     void publish();
 
     std::string product_id_;
-    FlatBookSideBuilder bids_; // descending (best bid first)
-    FlatBookSideBuilder asks_; // ascending (best ask first)
+    FlatBookSideBuilder<std::greater<double>> bids_; // descending (best bid first)
+    FlatBookSideBuilder<std::less<double>> asks_;    // ascending (best ask first)
     uint64_t update_count_ = 0;
 
     Seqlock<FlatSnapshot> published_;

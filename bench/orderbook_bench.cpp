@@ -72,15 +72,16 @@ BENCHMARK(BM_MapOrderbook_Write);
 // ---------------------------------------------------------------------------
 
 static void BM_FlatOrderbook_Write(benchmark::State& state) {
-    cob::FlatBookSideBuilder bids, asks;
+    cob::FlatBookSideBuilder<std::greater<double>> bids;
+    cob::FlatBookSideBuilder<std::less<double>> asks;
 
     std::size_t idx = 0;
     for (auto _ : state) {
         const auto& u = g_updates[idx % g_updates.size()];
         if (u.is_bid) {
-            bids.apply<true>(u.price, u.size);
+            bids.apply(u.price, u.size);
         } else {
-            asks.apply<false>(u.price, u.size);
+            asks.apply(u.price, u.size);
         }
         benchmark::DoNotOptimize(bids);
         benchmark::DoNotOptimize(asks);
@@ -123,11 +124,12 @@ static void BM_FlatOrderbook_Read(benchmark::State& state) {
     cob::Seqlock<cob::FlatSnapshot> seqlock;
 
     // Populate
-    cob::FlatBookSideBuilder bids_builder, asks_builder;
+    cob::FlatBookSideBuilder<std::greater<double>> bids_builder;
+        cob::FlatBookSideBuilder<std::less<double>> asks_builder;
     for (std::size_t i = 0; i < 1000; ++i) {
         const auto& u = g_updates[i];
-        if (u.is_bid) bids_builder.apply<true>(u.price, u.size);
-        else asks_builder.apply<false>(u.price, u.size);
+        if (u.is_bid) bids_builder.apply(u.price, u.size);
+        else asks_builder.apply(u.price, u.size);
     }
     cob::FlatSnapshot snap;
     snap.bids = bids_builder.to_flat();
@@ -173,13 +175,14 @@ BENCHMARK(BM_MapOrderbook_WriteAndPublish);
 
 static void BM_FlatOrderbook_WriteAndPublish(benchmark::State& state) {
     cob::Seqlock<cob::FlatSnapshot> seqlock;
-    cob::FlatBookSideBuilder bids_builder, asks_builder;
+    cob::FlatBookSideBuilder<std::greater<double>> bids_builder;
+        cob::FlatBookSideBuilder<std::less<double>> asks_builder;
 
     std::size_t idx = 0;
     for (auto _ : state) {
         const auto& u = g_updates[idx % g_updates.size()];
-        if (u.is_bid) bids_builder.apply<true>(u.price, u.size);
-        else asks_builder.apply<false>(u.price, u.size);
+        if (u.is_bid) bids_builder.apply(u.price, u.size);
+        else asks_builder.apply(u.price, u.size);
 
         // Publish to seqlock
         cob::FlatSnapshot snap;
@@ -237,12 +240,13 @@ static void BM_FlatOrderbook_Concurrent(benchmark::State& state) {
 
     // Writer thread: continuous updates + publish
     std::thread writer([&]() {
-        cob::FlatBookSideBuilder bids_builder, asks_builder;
+        cob::FlatBookSideBuilder<std::greater<double>> bids_builder;
+        cob::FlatBookSideBuilder<std::less<double>> asks_builder;
         std::size_t idx = 0;
         while (running.load(std::memory_order_relaxed)) {
             const auto& u = g_updates[idx % g_updates.size()];
-            if (u.is_bid) bids_builder.apply<true>(u.price, u.size);
-            else asks_builder.apply<false>(u.price, u.size);
+            if (u.is_bid) bids_builder.apply(u.price, u.size);
+            else asks_builder.apply(u.price, u.size);
 
             cob::FlatSnapshot snap;
             snap.bids = bids_builder.to_flat();

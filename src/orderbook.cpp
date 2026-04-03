@@ -14,10 +14,10 @@ void Orderbook::apply_snapshot(const std::vector<PriceLevel>& bids,
     asks_.clear();
 
     for (const auto& [price, size] : bids) {
-        bids_.apply<true>(price, size);
+        bids_.apply(price, size);
     }
     for (const auto& [price, size] : asks) {
-        asks_.apply<false>(price, size);
+        asks_.apply(price, size);
     }
 
     update_count_ = 0;
@@ -28,10 +28,10 @@ void Orderbook::apply_update(const std::vector<PriceLevel>& bids,
                               const std::vector<PriceLevel>& asks)
 {
     for (const auto& [price, size] : bids) {
-        bids_.apply<true>(price, size);
+        bids_.apply(price, size);
     }
     for (const auto& [price, size] : asks) {
-        asks_.apply<false>(price, size);
+        asks_.apply(price, size);
     }
 
     ++update_count_;
