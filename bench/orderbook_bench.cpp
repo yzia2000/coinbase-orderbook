@@ -82,6 +82,9 @@ static void BM_FlatOrderbook_Write(benchmark::State& state) {
         } else {
             asks.apply<false>(u.price, u.size);
         }
+        benchmark::DoNotOptimize(bids);
+        benchmark::DoNotOptimize(asks);
+        benchmark::ClobberMemory();
         ++idx;
     }
     state.SetItemsProcessed(state.iterations());
