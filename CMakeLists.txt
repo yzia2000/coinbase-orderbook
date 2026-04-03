@@ -1,0 +1,34 @@
+cmake_minimum_required(VERSION 3.20)
+project(coinbase-orderbook VERSION 0.1.0 LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+# Dependencies (provided by Conan)
+find_package(Boost REQUIRED COMPONENTS system)
+find_package(OpenSSL REQUIRED)
+find_package(nlohmann_json REQUIRED)
+find_package(Threads REQUIRED)
+
+# Main executable
+add_executable(coinbase-orderbook
+    src/main.cpp
+    src/websocket_client.cpp
+    src/orderbook.cpp
+    src/tui_renderer.cpp
+)
+
+target_include_directories(coinbase-orderbook PRIVATE include)
+
+target_link_libraries(coinbase-orderbook PRIVATE
+    Boost::system
+    OpenSSL::SSL
+    OpenSSL::Crypto
+    Threads::Threads
+    nlohmann_json::nlohmann_json
+)
+
+target_compile_options(coinbase-orderbook PRIVATE
+    -Wall -Wextra -Wpedantic -O2
+)

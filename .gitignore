@@ -1,0 +1,12 @@
+build/
+output/
+CMakeUserPresets.json
+
+# Conan
+CMakeUserPresets.json
+conan_provider.cmake
+
+# IDE
+.vscode/
+.idea/
+compile_commands.json
