@@ -7,62 +7,68 @@
 
 namespace cob {
 
-// Seqlock for trivially copyable types.
-// Single writer, multiple readers. Writer never blocks.
-// Reader retries on torn read.
-//
-// Data is stored in atomic uint64_t words to avoid data races under
-// the C++ memory model. The seqlock protocol detects torn reads and
-// retries.
+// Lock-free buffer that stores a trivially copyable T as atomic
+// uint64_t words. Each word is a single MOV on x86-64.
+template <typename T>
+    requires std::is_trivially_copyable_v<T>
+class AtomicBuffer {
+    static constexpr auto N = (sizeof(T) + 7) / 8;
+
+public:
+    AtomicBuffer() { for (auto& w : words_) w.store(0, std::memory_order_relaxed); }
+
+    void write(const T& value) noexcept {
+        uint64_t tmp[N]{};
+        std::memcpy(tmp, &value, sizeof(T));
+        for (std::size_t i = 0; i < N; ++i)
+            words_[i].store(tmp[i], std::memory_order_relaxed);
+    }
+
+    T read() const noexcept {
+        uint64_t tmp[N];
+        for (std::size_t i = 0; i < N; ++i)
+            tmp[i] = words_[i].load(std::memory_order_relaxed);
+        T result;
+        std::memcpy(&result, tmp, sizeof(T));
+        return result;
+    }
+
+private:
+    std::atomic<uint64_t> words_[N];
+};
+
+// Seqlock: single writer, multiple readers, writer never blocks.
+// Reader retries on torn read detected via sequence counter.
 template <typename T>
     requires std::is_trivially_copyable_v<T>
 class Seqlock {
-    static constexpr std::size_t NUM_WORDS = (sizeof(T) + sizeof(uint64_t) - 1) / sizeof(uint64_t);
-
 public:
-    Seqlock() : seq_(0) {
-        for (auto& w : data_) w.store(0, std::memory_order_relaxed);
-    }
-
     void store(const T& value) noexcept {
-        uint64_t words[NUM_WORDS]{};
-        std::memcpy(words, &value, sizeof(T));
-
         seq_.store(seq_.load(std::memory_order_relaxed) + 1, std::memory_order_relaxed);
         std::atomic_thread_fence(std::memory_order_release);
 
-        for (std::size_t i = 0; i < NUM_WORDS; ++i) {
-            data_[i].store(words[i], std::memory_order_relaxed);
-        }
+        data_.write(value);
 
         std::atomic_thread_fence(std::memory_order_release);
         seq_.store(seq_.load(std::memory_order_relaxed) + 1, std::memory_order_relaxed);
     }
 
     T load() const noexcept {
-        uint64_t words[NUM_WORDS];
         for (;;) {
             uint32_t seq0 = seq_.load(std::memory_order_acquire);
-            if (seq0 & 1) continue; // writer active, spin
+            if (seq0 & 1) continue;
 
-            for (std::size_t i = 0; i < NUM_WORDS; ++i) {
-                words[i] = data_[i].load(std::memory_order_relaxed);
-            }
+            T result = data_.read();
 
             std::atomic_thread_fence(std::memory_order_acquire);
-            uint32_t seq1 = seq_.load(std::memory_order_relaxed);
-
-            if (seq0 == seq1) break;
+            if (seq_.load(std::memory_order_relaxed) == seq0)
+                return result;
         }
-
-        T result;
-        std::memcpy(&result, words, sizeof(T));
-        return result;
     }
 
 private:
-    alignas(64) std::atomic<uint64_t> data_[NUM_WORDS];
-    alignas(64) std::atomic<uint32_t> seq_;
+    alignas(64) AtomicBuffer<T> data_;
+    alignas(64) std::atomic<uint32_t> seq_{0};
 };
 
 } // namespace cob
