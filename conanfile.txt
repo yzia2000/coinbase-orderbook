@@ -3,6 +3,7 @@ boost/1.87.0
 openssl/3.4.1
 nlohmann_json/3.11.3
 benchmark/1.9.1
+gtest/1.15.0
 
 [generators]
 CMakeDeps

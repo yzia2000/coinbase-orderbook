@@ -52,3 +52,29 @@ target_link_libraries(orderbook-bench PRIVATE
 target_compile_options(orderbook-bench PRIVATE
     -Wall -Wextra -Wpedantic -O2
 )
+
+# Tests
+find_package(GTest REQUIRED)
+include(GoogleTest)
+enable_testing()
+
+add_executable(orderbook-test
+    test/flat_orderbook_test.cpp
+    test/orderbook_test.cpp
+    test/seqlock_test.cpp
+    src/orderbook.cpp
+)
+
+target_include_directories(orderbook-test PRIVATE include)
+
+target_link_libraries(orderbook-test PRIVATE
+    GTest::gtest
+    GTest::gtest_main
+    Threads::Threads
+)
+
+target_compile_options(orderbook-test PRIVATE
+    -Wall -Wextra -Wpedantic -O2
+)
+
+gtest_discover_tests(orderbook-test)
